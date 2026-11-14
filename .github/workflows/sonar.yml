@@ -1,0 +1,48 @@
+# Análisis de calidad con SonarQube Cloud
+# Se ejecuta en cada push a la rama principal (master) y en cada pull request.
+name: SonarQube Cloud
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  build-y-analisis:
+    name: Compilación, pruebas y análisis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout completo del repositorio
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # historial completo: SonarQube Cloud lo necesita para calcular el código nuevo
+
+      # El proyecto usa Angular 11, que solo es compatible con Node.js 10, 12 o 14
+      - name: Configurar Node.js 14
+        uses: actions/setup-node@v4
+        with:
+          node-version: '14'
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Compilar el proyecto (build de producción)
+        run: npx ng build --prod
+
+      # El repositorio no incluye archivos *.spec.ts; Karma falla con una suite vacía,
+      # así que las pruebas solo se ejecutan si existen.
+      - name: Ejecutar pruebas unitarias (si existen)
+        run: |
+          if [ -n "$(find src -name '*.spec.ts' -print -quit)" ]; then
+            npx ng test --watch=false --browsers=ChromeHeadless --code-coverage
+          else
+            echo "El proyecto no contiene pruebas unitarias (*.spec.ts); se omite este paso."
+          fi
+
+      - name: Análisis con SonarQube Cloud
+        uses: SonarSource/sonarqube-scan-action@v8
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
